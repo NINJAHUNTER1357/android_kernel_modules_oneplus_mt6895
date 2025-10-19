@@ -97,6 +97,7 @@ enum e_fastchg_version {
 	FASTCHG_VERSION_88W_SVOOC = 18,
 	FASTCHG_VERSION_55W_SVOOC = 19,
 	FASTCHG_VERSION_125W_SVOOC = 20,
+	FASTCHG_VERSION_45W_SVOOC = 21,
 	FASTCHG_VERSION_OTHER,
 };
 
@@ -148,6 +149,29 @@ enum {
 	FAST_SOC_75_TO_85,
 	FAST_SOC_85_TO_90,
 	FAST_SOC_MAX,
+};
+
+enum oplus_adapter_type {
+	ADAPTER_TYPE_UNKNOWN,
+	ADAPTER_TYPE_AC,
+	ADAPTER_TYPE_CAR,
+	ADAPTER_TYPE_PB,  /* power bank */
+};
+
+enum oplus_adapter_chg_type {
+	CHARGER_TYPE_UNKNOWN,
+	CHARGER_TYPE_NORMAL,
+	CHARGER_TYPE_VOOC,
+	CHARGER_TYPE_SVOOC,
+};
+
+struct oplus_adapter_struct {
+	unsigned char id_min;
+	unsigned char id_max;
+	unsigned int power_vooc;
+	unsigned int power_svooc;
+	enum oplus_adapter_type adapter_type;
+	enum oplus_adapter_chg_type adapter_chg_type;
 };
 
 struct batt_bcc_curve {
@@ -222,6 +246,16 @@ struct oplus_vooc_chip {
 
 	struct power_supply *batt_psy;
 	struct power_supply *usb_psy;
+
+	bool full_limit_curr_support;
+	int current_full_limit;
+	int pre_ap_current_limit;
+	bool full_limit_curr_trigger;
+	int vooc_1time_full_volt;
+	int vooc_ntime_full_volt;
+	int notify_allow_reading_iic_cnt;
+	int ask_current_level;
+
 	int pcb_version;
 	bool allow_reading;
 	bool fastchg_started;
@@ -258,6 +292,7 @@ struct oplus_vooc_chip {
 #ifndef CONFIG_DISABLE_OPLUS_FUNCTION
 	struct manufacture_info manufacture_info;
 #endif
+
 	bool vooc_fw_update_newmethod;
 	char *fw_path;
 	struct mutex pinctrl_mutex;
@@ -441,6 +476,9 @@ struct oplus_vooc_operations {
 	int (*get_data_gpio_num)(struct oplus_vooc_chip *chip);
 	void (*update_temperature_soc)(void);
 	int (*check_asic_fw_status)(struct oplus_vooc_chip *chip);
+	int (*get_adapter_update_status)(void);
+	bool (*get_fastchg_to_normal)(void);
+	bool (*get_fastchg_to_warm)(void);
 };
 
 void oplus_vooc_init(struct oplus_vooc_chip *chip);
@@ -452,6 +490,7 @@ bool oplus_vooc_wake_fastchg_work(struct oplus_vooc_chip *chip);
 void oplus_vooc_print_log(void);
 void oplus_vooc_switch_mode(int mode);
 bool oplus_vooc_get_allow_reading(void);
+void oplus_vooc_set_allow_reading(bool state);
 bool oplus_vooc_get_fastchg_started(void);
 bool oplus_vooc_get_fastchg_ing(void);
 bool oplus_vooc_get_fastchg_allow(void);
@@ -529,4 +568,6 @@ bool oplus_vooc_bcc_get_temp_range(void);
 bool oplus_vooc_get_vooc_by_normal_path(void);
 int oplus_vooc_get_batt_curve_current(void);
 bool oplus_vooc_chip_is_null(void);
+int oplus_get_vooc_adapter_power(int id);
+int oplus_get_vooc_adapter_type(int id);
 #endif /* _OPLUS_VOOC_H */

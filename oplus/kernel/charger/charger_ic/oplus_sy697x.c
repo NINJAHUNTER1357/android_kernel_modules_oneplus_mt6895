@@ -67,8 +67,8 @@
 #include "../voocphy/oplus_voocphy.h"
 #include "../oplus_configfs.h"
 #if IS_ENABLED(CONFIG_TCPC_CLASS)
-#include "../../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpci.h"
-#include "../../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpm.h"
+#include "../pd_ext/inc/tcpci.h"
+#include "../pd_ext/inc/tcpm.h"
 #endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
@@ -76,8 +76,6 @@ int sc8547_subsys_init(void);
 void sc8547_subsys_exit(void);
 int sgm7220_i2c_init(void);
 void sgm7220_i2c_exit(void);
-extern int et7303_driver_init(void);
-extern void et7303_driver_exit(void);
 extern void oplus_enable_device_mode(bool enable);
 #endif
 
@@ -750,6 +748,20 @@ int oplus_sy697x_get_pd_type(void)
 }
 EXPORT_SYMBOL(oplus_sy697x_get_pd_type);
 
+int oplus_sy697x_check_cc_mode(void)
+{
+	const char *tcpc_name = "type_c_port0";
+	struct tcpc_device *tcpc_dev;
+
+	tcpc_dev = tcpc_dev_get_by_name(tcpc_name);
+	if (IS_ERR_OR_NULL(tcpc_dev)) {
+		chg_err("tcpc info error\n");
+		return -EINVAL;
+	}
+
+	return tcpm_inquire_typec_role(tcpc_dev);
+}
+
 static int pd_get_cap(enum adapter_cap_type type, struct adapter_power_cap *tacap)
 {
 	struct tcpm_power_cap_val apdo_cap;
@@ -1260,7 +1272,6 @@ int oplus_sy697x_get_otg_online_status(void)
 	return online;
 }
 EXPORT_SYMBOL(oplus_sy697x_get_otg_online_status);
-
 
 static bool oplus_usbtemp_check_is_gpio(struct oplus_chg_chip *chip)
 {
@@ -3994,7 +4005,7 @@ static int oplus_thermal_get_tmp(void)
 	int ntcctrl_gpio_value = 0;
 	int ret = 0;
 	struct sy697x *chip = g_sy;
-	//static int adc_switch_status = 0;
+
 	if (!chip) {
 		printk(KERN_ERR "[OPLUS_CHG][%s]: chip or chg not ready!\n", __func__);
 		return -1;
@@ -4022,7 +4033,7 @@ static int oplus_thermal_get_tmp(void)
 		chg_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch1_chan);
 		bb_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch2_chan);
 		pinctrl_select_state(chip->pinctrl, chip->ntc_switch_high);
-		msleep(100);
+		msleep(30);
 		ret = gpio_get_value(chip->ntcctrl_gpio);
 		flash_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch1_chan);
 		board_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch2_chan);
@@ -4030,7 +4041,7 @@ static int oplus_thermal_get_tmp(void)
 		flash_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch1_chan);
 		board_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch2_chan);
 		pinctrl_select_state(chip->pinctrl, chip->ntc_switch_low);
-		msleep(100);
+		msleep(30);
 		ret = gpio_get_value(chip->ntcctrl_gpio);
 		chg_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch1_chan);
 		bb_thermal_temp = oplus_get_ntc_tmp(chip->iio.ntc_switch2_chan);
@@ -4046,6 +4057,7 @@ static int oplus_thermal_amux_get_tmp(void)
 	int ntcctrl_gpio_value = 0;
 	int ret = 0;
 	struct sy697x *chip = g_sy;
+
 	if (!chip) {
 		chg_err("chip or chg not ready!\n");
 		return -1;
@@ -4072,7 +4084,7 @@ static int oplus_thermal_amux_get_tmp(void)
 		pa_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch3_chan);
 		batt_btb_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch4_chan);
 		pinctrl_select_state(chip->pinctrl, chip->ntc_switch_amux_high);
-		msleep(100);
+		msleep(30);
 		ret = gpio_get_value(chip->ntcctrl_gpio_amux);
 		vbus_btb_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch3_chan);
 		batt_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch4_chan);
@@ -4080,7 +4092,7 @@ static int oplus_thermal_amux_get_tmp(void)
 		vbus_btb_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch3_chan);
 		batt_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch4_chan);
 		pinctrl_select_state(chip->pinctrl, chip->ntc_switch_amux_low);
-		msleep(100);
+		msleep(30);
 		ret = gpio_get_value(chip->ntcctrl_gpio_amux);
 		pa_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch3_chan);
 		batt_btb_thermal_temp = oplus_get_ntc_tmp_amux(chip->iio.ntc_switch4_chan);
@@ -4090,8 +4102,6 @@ static int oplus_thermal_amux_get_tmp(void)
 
 	return 0;
 }
-
-
 
 int oplus_sy697x_thermal_tmp_get_chg(void)
 {
@@ -5783,6 +5793,7 @@ struct oplus_chg_operations  oplus_chg_sy697x_ops = {
 	.set_typec_sinkonly = sgm7220_set_typec_sinkonly,
 	.get_charger_current = sy697x_get_input_current,
 	.really_suspend_charger = sy697x_suspend_by_hz_mode,
+	.check_cc_mode = oplus_sy697x_check_cc_mode,
 };
 
 static void aicl_work_callback(struct work_struct *work)
@@ -6428,6 +6439,144 @@ static void oplus_sy697x_tcpc_complete_work(struct work_struct *data)
 }
 #endif
 
+int sy697x_get_cpu_therm_usr_temp(struct thermal_zone_device *tz, int *temp)
+{
+	*temp =  oplus_sy697x_thermal_tmp_get_bb();
+
+	return 0;
+}
+
+int sy697x_get_chg_skin_therm_temp(struct thermal_zone_device *tz, int *temp)
+{
+	*temp =  oplus_sy697x_thermal_tmp_get_chg();
+
+	return 0;
+}
+
+int sy697x_get_vbus_btb_therm_usr_temp(struct thermal_zone_device *tz, int *temp)
+{
+	*temp =  oplus_sy697x_thermal_tmp_get_vbus_btb();
+
+	return 0;
+}
+
+int sy697x_get_batt_btb_therm_usr_temp(struct thermal_zone_device *tz, int *temp)
+{
+	*temp =  oplus_sy697x_thermal_tmp_get_batt_btb();
+
+	return 0;
+}
+
+int sy697x_get_quiet_therm_usr_temp(struct thermal_zone_device *tz, int *temp)
+{
+	*temp =  oplus_sy697x_thermal_tmp_get_board();
+
+	return 0;
+}
+
+
+static struct thermal_zone_device_ops cpu_therm_usr_temp_ops = {
+	.get_temp = sy697x_get_cpu_therm_usr_temp,
+};
+
+static struct thermal_zone_device_ops chg_skin_therm_usr_temp_ops = {
+	.get_temp = sy697x_get_chg_skin_therm_temp,
+};
+
+static struct thermal_zone_device_ops vbus_btb_therm_usr_temp_ops = {
+	.get_temp = sy697x_get_vbus_btb_therm_usr_temp,
+};
+
+static struct thermal_zone_device_ops batt_btb_therm_usr_temp_ops = {
+	.get_temp = sy697x_get_batt_btb_therm_usr_temp,
+};
+
+static struct thermal_zone_device_ops quiet_therm_usr_temp_ops = {
+	.get_temp = sy697x_get_quiet_therm_usr_temp,
+};
+
+struct thermal_zone_device *cpu_therm_usr_tz_dev;
+struct thermal_zone_device *chg_skin_therm_usr_tz_dev;
+struct thermal_zone_device *vbus_btb_therm_usr_tz_dev;
+struct thermal_zone_device *batt_btb_therm_usr_tz_dev;
+struct thermal_zone_device *quiet_therm_usr_tz_dev;
+
+int register_charger_thermal_zones(void)
+{
+	struct thermal_zone_device *tz;
+	int ret = -1;
+
+	/* --- cpu-therm-usr */
+	tz = thermal_zone_device_register("cpu-therm-usr",
+					0, 0, NULL, &cpu_therm_usr_temp_ops, NULL, 0, 0);
+	if (IS_ERR(tz)) {
+		chg_err("cpu-therm-usr thermal zone register fail");
+		return -ENOMEM;
+	}
+	ret = thermal_zone_device_enable(tz);
+	if (ret)
+		thermal_zone_device_unregister(tz);
+	else
+		cpu_therm_usr_tz_dev = tz;
+
+
+	/* --- chg-skin-therm-usr */
+	tz = thermal_zone_device_register("chg-skin-therm-usr",
+					0, 0, NULL, &chg_skin_therm_usr_temp_ops, NULL, 0, 0);
+	if (IS_ERR(tz)) {
+		chg_err("chg-skin_therm-usr thermal zone register fail");
+		return -ENOMEM;
+	}
+	ret = thermal_zone_device_enable(tz);
+	if (ret)
+		thermal_zone_device_unregister(tz);
+	else
+		chg_skin_therm_usr_tz_dev = tz;
+
+
+	/* --- vbus-btb--therm-usr */
+	tz = thermal_zone_device_register("vbus-btb-therm-usr",
+					0, 0, NULL, &vbus_btb_therm_usr_temp_ops, NULL, 0, 0);
+	if (IS_ERR(tz)) {
+		chg_err("vbus_btb-therm-usr thermal zone register fail");
+		return -ENOMEM;
+	}
+	ret = thermal_zone_device_enable(tz);
+	if (ret)
+		thermal_zone_device_unregister(tz);
+	else
+		vbus_btb_therm_usr_tz_dev = tz;
+
+	/* --- batt-btb-therm-usr */
+	tz = thermal_zone_device_register("batt-btb-therm-usr",
+					0, 0, NULL, &batt_btb_therm_usr_temp_ops, NULL, 0, 0);
+	if (IS_ERR(tz)) {
+		chg_err("batt_btb-therm-usr thermal zone register fail");
+		return -ENOMEM;
+	}
+	ret = thermal_zone_device_enable(tz);
+	if (ret)
+		thermal_zone_device_unregister(tz);
+	else
+		batt_btb_therm_usr_tz_dev = tz;
+
+	/* --- quiet-therm-usr */
+	tz = thermal_zone_device_register("quiet-therm-usr",
+					0, 0, NULL, &quiet_therm_usr_temp_ops, NULL, 0, 0);
+	if (IS_ERR(tz)) {
+		chg_err("quiet-therm-usr thermal zone register fail");
+		return -ENOMEM;
+	}
+	ret = thermal_zone_device_enable(tz);
+	if (ret)
+		thermal_zone_device_unregister(tz);
+	else
+		quiet_therm_usr_tz_dev = tz;
+
+	pr_err("register charger thermal zones successful..!!!");
+	return 0;
+}
+
 extern int rt_pd_manager_init(void);
 extern void rt_pd_manager_exit(void);
 #define INIT_WORK_NORMAL_DELAY 7000
@@ -6517,6 +6666,9 @@ static int sy697x_charger_probe(struct i2c_client *client,
 	sy->before_suspend_icl = 0;
 	sy->before_unsuspend_icl = 0;
 	sy->chgic_ops = &oplus_chgic_sy697x_ops;
+
+	// Init rt pd manager
+	rt_pd_manager_init();
 
 	ret = sy697x_detect_device(sy);
 	if (ret) {
@@ -6652,8 +6804,8 @@ static int sy697x_charger_probe(struct i2c_client *client,
 
 	pr_err("sy697x probe successfully Part Num:%d, Revision:%d\n!", sy->part_no, sy->revision);
 	chg_init_done = 1;
-	// Init rt pd manager
-	rt_pd_manager_init();
+
+	register_charger_thermal_zones();
 	return 0;
 err_init:
 err_parse_dt:
@@ -6868,7 +7020,6 @@ void __exit sy697x_charger_exit(void)
 	rt_pd_manager_exit();
 	sc8547_subsys_exit();
 	sgm7220_i2c_exit();
-	et7303_driver_exit();
 	bq27541_driver_exit();
 	i2c_del_driver(&sy697x_charger_driver);
 }
@@ -6887,7 +7038,6 @@ int __init sy697x_charger_init(void)
 	bq27541_driver_init();
 	sc8547_subsys_init();
 	sgm7220_i2c_init();
-	et7303_driver_init();
 	return ret;
 }
 oplus_chg_module_register(sy697x_charger);

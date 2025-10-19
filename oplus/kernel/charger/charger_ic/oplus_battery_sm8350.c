@@ -3107,7 +3107,8 @@ static int battery_psy_get_prop(struct power_supply *psy,
 		pval->intval = chip->limits.temp_normal_vfloat_mv;
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
-		if ((oplus_chg_get_voocphy_support() == NO_VOOCPHY && oplus_vooc_get_fastchg_started() == true) || chip->charger_exist  == 0) {
+		if (((oplus_chg_get_voocphy_support() == NO_VOOCPHY && oplus_vooc_get_fastchg_started() == true) ||
+						chip->charger_exist  == 0) && chip->read_by_reg == 0) {
 			pval->intval = oplus_gauge_get_prev_batt_current();
 		} else {
 			pval->intval = oplus_gauge_get_batt_current();
@@ -5027,6 +5028,27 @@ static void oplus_usbtemp_recover_work(struct work_struct *work)
 	oplus_usbtemp_recover_func(g_oplus_chip);
 }
 
+#define ICHARGING_MIN_MA -50
+static void zy0603_reset_fg_balance_work(struct work_struct *work)
+{
+	int rc = 0;
+	struct battery_chg_dev *bcdev = NULL;
+	struct psy_state *pst = NULL;
+
+	if (!g_oplus_chip) {
+		chg_err("g_oplus_chip is NULL!\n");
+		return;
+	}
+	bcdev = g_oplus_chip->pmic_spmi.bcdev_chip;
+	pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+
+	if (g_oplus_chip->icharging > ICHARGING_MIN_MA)
+		return;
+	rc = write_property_id(bcdev, pst, BATT_ZY0603_RESET_FG_BALANCE, 1);
+	if (rc)
+		chg_err("zy0603_reset_fg_balance fail, rc=%d\n", rc);
+}
+
 static int g_tbatt_temp = 0;
 
 #define USBTEMP_BATTTEMP_GAP_HIGH 19
@@ -5211,6 +5233,10 @@ static void oplus_cid_status_change_work(struct work_struct *work)
 
 	cid_status = pst->prop[USB_CID_STATUS];
 	printk(KERN_ERR "%s: !!!cid_status[%d]\n", __func__, cid_status);
+	if (cid_status == 1) {
+		cancel_delayed_work(&bcdev->reset_fg_balance_work);
+		schedule_delayed_work(&bcdev->reset_fg_balance_work, msecs_to_jiffies(10000));
+	}
 	if (cid_status == 0) {
 		bcdev->pre_current = -1;
 		chip->usbtemp_check = false;
@@ -9111,7 +9137,7 @@ static int fg_bq27541_get_average_current(void)
 	bcdev = chip->pmic_spmi.bcdev_chip;
 	pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
 
-	if (chip->fg_info_package_read_support && !chip->charger_exist) {
+	if (chip->fg_info_package_read_support && !chip->charger_exist && !chip->read_by_reg) {
 		curr = DIV_ROUND_CLOSEST((int)bcdev->read_buffer_dump.data_buffer[1], 1000);
 		return curr;
 	}
@@ -9873,6 +9899,7 @@ static int battery_chg_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&bcdev->status_keep_clean_work, oplus_chg_wls_status_keep_clean_work);
 	INIT_DELAYED_WORK(&bcdev->usb_enum_check_work, usb_enum_check);
 	INIT_DELAYED_WORK(&bcdev->mcu_en_init_work, oplus_chg_mcu_en_init_work);
+	INIT_DELAYED_WORK(&bcdev->reset_fg_balance_work, zy0603_reset_fg_balance_work);
 	bcdev->status_wake_lock = wakeup_source_register(bcdev->dev, "status_wake_lock");
 	bcdev->status_wake_lock_on = false;
 #endif

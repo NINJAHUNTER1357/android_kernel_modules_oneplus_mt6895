@@ -12,6 +12,7 @@ struct oplus_pps_cp_device_operations {
 	int (*oplus_cp_hardware_init)(struct i2c_client *client);
 	int (*oplus_cp_reset)(struct i2c_client *client);
 	int (*oplus_cp_pmid2vout_enable)(struct i2c_client *client, bool enable);
+	int (*oplus_cp_sstimeout_ucp_enable)(struct i2c_client *client, bool enable);
 	int (*oplus_cp_cfg_sc)(struct i2c_client *client);
 	int (*oplus_cp_cfg_bypass)(struct i2c_client *client);
 	int (*oplus_get_ucp_flag)(struct i2c_client *client);
@@ -22,6 +23,10 @@ struct oplus_pps_cp_device_operations {
 	int (*oplus_get_cp_vout)(struct i2c_client *client);
 	int (*oplus_get_cp_vbat)(struct i2c_client *client);
 	int (*oplus_get_cp_tdie)(struct i2c_client *client);
+	int (*oplus_get_cp_info)(struct i2c_client *client, int type);
+	bool (*oplus_get_cp_enable)(struct i2c_client *client);
+	bool (*oplus_get_cp_status)(struct i2c_client *client);
+	bool (*oplus_cp_kick_dog)(struct i2c_client *client);
 };
 
 typedef enum {

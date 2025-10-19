@@ -131,6 +131,23 @@ static void oplus_cp_pmid2vout_enable(bool enable)
 	pps_err(" end\n");
 }
 
+static int oplus_cp_sstimeout_ucp_enable(bool enable)
+{
+	int ret = true;
+	int i;
+	for (i = CP_MASTER; i < CP_MAX; i++) {
+		if (cp_device[i].dev_ops != NULL) {
+			if (cp_device[i].dev_ops->oplus_cp_sstimeout_ucp_enable != NULL) {
+				ret = cp_device[i].dev_ops->oplus_cp_sstimeout_ucp_enable(cp_device[i].client, enable);
+			} else {
+				pps_err("%s Not support sstimeout ucp", cp_device[i].dev_name);
+				ret = -EINVAL;
+			}
+		}
+	}
+	return ret;
+}
+
 static int oplus_cp_get_ucp_flag(void)
 {
 	int ucp_fail = 0;
@@ -398,6 +415,80 @@ static int oplus_cp_slave_b_get_tdie(void)
 	return tdie;
 }
 
+static bool oplus_cp_slave_support(void)
+{
+	return (cp_device[CP_SLAVE_A].client != NULL);
+}
+
+static bool oplus_cp_slave_get_enable(void)
+{
+	bool enable = false;
+
+	if (cp_device[CP_SLAVE_A].dev_ops != NULL &&
+	    cp_device[CP_SLAVE_A].dev_ops->oplus_get_cp_enable != NULL) {
+		enable = cp_device[CP_SLAVE_A].dev_ops->oplus_get_cp_enable(cp_device[CP_SLAVE_A].client);
+	}
+
+	return enable;
+}
+
+static int oplus_cp_slave_hardware_init(void)
+{
+	if (cp_device[CP_SLAVE_A].dev_ops != NULL && cp_device[CP_SLAVE_A].dev_ops->oplus_cp_hardware_init != NULL)
+		return cp_device[CP_SLAVE_A].dev_ops->oplus_cp_hardware_init(cp_device[CP_SLAVE_A].client);
+	return -EINVAL;
+}
+
+static int oplus_cp_slave_cfg_mode_init(int mode)
+{
+	if (mode == PPS_SC_MODE) {
+		if (cp_device[CP_SLAVE_A].dev_ops != NULL && cp_device[CP_SLAVE_A].dev_ops->oplus_cp_cfg_sc != NULL)
+			return cp_device[CP_SLAVE_A].dev_ops->oplus_cp_cfg_sc(cp_device[CP_SLAVE_A].client);
+	} else if (mode == PPS_BYPASS_MODE) {
+		if (cp_device[CP_SLAVE_A].dev_ops != NULL && cp_device[CP_SLAVE_A].dev_ops->oplus_cp_cfg_bypass != NULL)
+			cp_device[CP_SLAVE_A].dev_ops->oplus_cp_cfg_bypass(cp_device[CP_SLAVE_A].client);
+	}
+	return -EINVAL;
+}
+
+static int oplus_cp_slave_reset(void)
+{
+	if (cp_device[CP_SLAVE_A].dev_ops != NULL && cp_device[CP_SLAVE_A].dev_ops->oplus_cp_reset != NULL)
+		return cp_device[CP_SLAVE_A].dev_ops->oplus_cp_reset(cp_device[CP_SLAVE_A].client);
+	return -EINVAL;
+}
+
+static bool oplus_cp_slave_get_status(void)
+{
+	if (cp_device[CP_SLAVE_A].dev_ops != NULL && cp_device[CP_SLAVE_A].dev_ops->oplus_get_cp_status != NULL)
+		return cp_device[CP_SLAVE_A].dev_ops->oplus_get_cp_status(cp_device[CP_SLAVE_A].client);
+	return -EINVAL;
+}
+
+static int oplus_cp_master_get_info(int type)
+{
+	if (cp_device[CP_MASTER].dev_ops != NULL && cp_device[CP_MASTER].dev_ops->oplus_get_cp_info != NULL)
+		return cp_device[CP_MASTER].dev_ops->oplus_get_cp_info(cp_device[CP_MASTER].client, type);
+	return -EINVAL;
+}
+
+static bool oplus_cp_master_kick_dog(void)
+{
+	if (cp_device[CP_MASTER].dev_ops != NULL && cp_device[CP_MASTER].dev_ops->oplus_cp_kick_dog != NULL)
+		return cp_device[CP_MASTER].dev_ops->oplus_cp_kick_dog(cp_device[CP_MASTER].client);
+	return false;
+}
+
+static bool oplus_cp_slave_kick_dog(void)
+{
+	bool ret = false;
+
+	if (cp_device[CP_SLAVE_A].dev_ops != NULL &&
+	    cp_device[CP_SLAVE_A].dev_ops->oplus_cp_kick_dog != NULL)
+		return cp_device[CP_SLAVE_A].dev_ops->oplus_cp_kick_dog(cp_device[CP_SLAVE_A].client);
+	return ret;
+}
+
 /* there no check null in oplus_pps.c call, all pfunc not be null */
 static struct oplus_pps_operations oplus_cp_pps_ops = {
 	.get_vbat0_volt = oplus_chg_read_vbat0_voltage,
@@ -412,6 +503,7 @@ static struct oplus_pps_operations oplus_cp_pps_ops = {
 	.pps_cp_reset = oplus_cp_reset,
 	.pps_cp_mode_init = oplus_cp_cfg_mode_init,
 	.pps_cp_pmid2vout_enable = oplus_cp_pmid2vout_enable,
+	.pps_cp_sstimeout_ucp_enable = oplus_cp_sstimeout_ucp_enable,
 	.pps_get_ucp_flag = oplus_cp_get_ucp_flag,
 	.pps_get_cp_vbat = oplus_cp_get_vbat,
 
@@ -421,6 +513,8 @@ static struct oplus_pps_operations oplus_cp_pps_ops = {
 	.pps_get_cp_master_vac = oplus_cp_master_get_vac,
 	.pps_get_cp_master_vout = oplus_cp_master_get_vout,
 	.pps_get_cp_master_tdie = oplus_cp_master_get_tdie,
+	.pps_get_cp_master_info = oplus_cp_master_get_info,
+	.pps_cp_master_kick_dog = oplus_cp_master_kick_dog,
 
 	.pps_get_cp_slave_vbus = oplus_cp_slave_get_vbus,
 	.pps_get_cp_slave_ibus = oplus_cp_slave_get_ibus,
@@ -428,6 +522,13 @@ static struct oplus_pps_operations oplus_cp_pps_ops = {
 	.pps_get_cp_slave_vac = oplus_cp_slave_get_vac,
 	.pps_get_cp_slave_vout = oplus_cp_slave_get_vout,
 	.pps_get_cp_slave_tdie = oplus_cp_slave_get_tdie,
+	.pps_get_cp_slave_support = oplus_cp_slave_support,
+	.pps_get_cp_slave_enable = oplus_cp_slave_get_enable,
+	.pps_get_cp_slave_status = oplus_cp_slave_get_status,
+	.pps_cp_slave_hardware_init = oplus_cp_slave_hardware_init,
+	.pps_cp_slave_cfg_mode_init = oplus_cp_slave_cfg_mode_init,
+	.pps_cp_slave_reset = oplus_cp_slave_reset,
+	.pps_cp_slave_kick_dog = oplus_cp_slave_kick_dog,
 
 	.pps_get_cp_slave_b_vbus = oplus_cp_slave_b_get_vbus,
 	.pps_get_cp_slave_b_ibus = oplus_cp_slave_b_get_ibus,
@@ -444,8 +545,8 @@ void oplus_pps_device_protect_irq_callback(DEV_PROTECT_FLAG flag)
 		return;
 	}
 
-	if (flag.value_bit.ibus_ucp || flag.value_bit.ibus_ocp) {
-		oplus_pps_stop_disconnect();
+	if (flag.value_bit.ibus_ucp || flag.value_bit.ibus_ocp || flag.value_bit.vout_ovp) {
+		oplus_pps_stop_cp_error();
 	}
 }
 
